@@ -116,7 +116,9 @@ class GAIAEvaluation(Evaluation):
         logger.info(f"Total instances to process: {len(instances)}")
         return instances
 
-    def prepare_workspace(self, instance: EvalInstance) -> RemoteWorkspace:
+    def prepare_workspace(
+        self, instance: EvalInstance, forward_env: list[str] | None = None
+    ) -> RemoteWorkspace:
         """Create workspace and copy necessary files."""
         logger.info(f"Preparing workspace for instance {instance.id}")
 
@@ -125,13 +127,14 @@ class GAIAEvaluation(Evaluation):
             workspace = DockerDevWorkspace(
                 base_image="nikolaik/python-nodejs:python3.12-nodejs22",
                 working_dir="/workspace",
+                forward_env=forward_env or [],
             )
         elif self.metadata.workspace_type == "remote":
             # For workflow, use APIRemoteWorkspace with pre-built GAIA image
             # GAIA uses a universal agent server image (one image for all instances)
             # Built from nikolaik/python-nodejs:python3.12-nodejs22 base
             # Using binary target (not binary-minimal) to include Chromium for browser operations
-            # Note: binary target doesn't add target suffix to tag, so it's just gaia-with-mcp
+            # Image includes pre-cached MCP server to eliminate startup delays
             runtime_api_key = os.getenv("RUNTIME_API_KEY")
             if not runtime_api_key:
                 raise ValueError(
@@ -140,7 +143,7 @@ class GAIAEvaluation(Evaluation):
 
             sdk_short_sha = os.getenv("SDK_SHORT_SHA", SDK_SHORT_SHA)
             agent_server_image = (
-                f"{EVAL_AGENT_SERVER_IMAGE}:{sdk_short_sha}-gaia-with-mcp"
+                f"{EVAL_AGENT_SERVER_IMAGE}:{sdk_short_sha}-gaia-binary"
             )
 
             if not image_exists(agent_server_image):
@@ -159,6 +162,7 @@ class GAIAEvaluation(Evaluation):
                 runtime_api_key=runtime_api_key,
                 server_image=agent_server_image,
                 target_type="binary",  # GAIA images use binary target
+                forward_env=forward_env or [],
             )
         else:
             raise ValueError(
